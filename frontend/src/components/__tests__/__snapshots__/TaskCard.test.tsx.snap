@@ -1,0 +1,3 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`TaskCard Component renders correctly with task data 1`] = `null`;
