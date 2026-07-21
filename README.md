@@ -23,7 +23,7 @@ Berikut adalah rincian implementasi yang merespons spesifikasi kebutuhan asesmen
 ### Tugas 2 - Redis (15%)
 
 - **Tembolok (Cache) GET /api/tasks selama 60 detik**: Mengimplementasikan tembolok pada tingkat layanan (service-level) dengan batasan TTL. Untuk mencegah cache stampedes di bawah beban puncak, pustaka `golang.org/x/sync/singleflight` digunakan.
-- **Invalidasi tembolok pasca create/update/delete**: Operasi mutasi data (write) secara otomatis memicu rutinitas invalidasi tembolok atomik melalui eksekusi skrip Lua.
+- **Invalidasi tembolok pasca create/update/delete**: Operasi mutasi data (write) secara otomatis memicu rutinitas invalidasi tembolok non-blocking melalui pemindaian pola kunci (`SCAN tasks:*`) dan pelepasan memori aman (`UNLINK`) tanpa kebocoran memori atau keterbatasan skrip Lua.
 - **Kunci Tembolok Dinamis (Dynamic Cache Keys)**: Kunci tembolok dihasilkan secara dinamis dengan merangkai semua parameter kueri aktif untuk menjamin akurasi rujukan tembolok pada titik akhir (endpoint) yang menggunakan filter.
 
 ### Tugas 3 - Frontend (25%)
@@ -50,7 +50,7 @@ Berikut adalah rincian implementasi yang merespons spesifikasi kebutuhan asesmen
 ### 1. Backend (Go & Gin)
 
 - **`repositories/task_repository.go`**: Menangani seluruh kueri basis data menggunakan GORM. Penyusunan kueri dinamis (_dynamic query building_) diimplementasikan secara ekstensif pada fungsi `FindAll` untuk merangkai kondisi `WHERE` secara kondisional berdasarkan _query params_ tanpa celah SQL Injection. Eksepsi galat (seperti duplikasi judul) dipetakan melalui validasi galat MySQL spesifik (kode 1062) agar lapisan layanan (service) dapat menerima penanda `ErrDuplicateTitle`.
-- **`services/task_service.go`**: Lapisan orkestrasi bisnis dan intervensi tembolok (cache). Pada operasi `GetTasks`, mekanisme _Singleflight_ (`s.sg.Do`) dikonfigurasi untuk menangkap permintaan identik yang bersamaan secara simultan, sehingga pangkalan data terhindar dari _Cache Stampede_. Invalidasi memori pasca mutasi berjalan secara asinkron (atau direkomendasikan berjalan di _goroutine_) menggunakan instruksi skrip Lua untuk membongkar daftar kunci tembolok (`UNLINK`) secara mutlak dan atomik.
+- **`services/task_service.go`**: Lapisan orkestrasi bisnis dan intervensi tembolok (cache). Pada operasi `GetTasks`, mekanisme _Singleflight_ (`s.sg.Do`) dikonfigurasi untuk menangkap permintaan identik yang bersamaan secara simultan, sehingga pangkalan data terhindar dari _Cache Stampede_. Invalidasi memori pasca mutasi berjalan secara aman menggunakan pemindaian iteratif `SCAN` dan pelepasan memori `UNLINK` pada namespace `tasks:*` untuk mencegah *memory leak* dan batas stack Lua.
 - **`controllers/task_controller.go`**: Pengendali laju muatan (payload) HTTP. Mengeksekusi penarikan properti dari `gin.Context` (_query params_, parameter _path_, atau JSON _body_) serta menyelaraskan balasan _status code_ HTTP secara ketat dan konsisten (mengembalikan 409 untuk duplikasi alih-alih 500).
 
 ### 2. Frontend (React Native & Expo)
